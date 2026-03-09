@@ -1,9 +1,8 @@
 module DesignTokens.DimensionTest exposing (suite)
 
-import DesignTokens.Dimension as Dimension exposing (Dimension, DimensionUnit(..), px, rem)
+import DesignTokens.Dimension as Dimension exposing (DimensionUnit(..), px, rem)
 import DesignTokens.Fuzzers as Fuzzers
 import Expect
-import Fuzz
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Test exposing (Test, describe, fuzz, test)

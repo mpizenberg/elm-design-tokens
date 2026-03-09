@@ -5,7 +5,6 @@ import DesignTokens.Dimension as Dimension
 import DesignTokens.Shadow as Shadow exposing (Shadow)
 import Expect
 import Json.Decode as Decode
-import Json.Encode as Encode
 import Test exposing (Test, describe, test)
 
 

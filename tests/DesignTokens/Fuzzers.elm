@@ -1,27 +1,21 @@
 module DesignTokens.Fuzzers exposing
     ( color
     , colorSpace
-    , components
     , cubicBezier
     , dimension
-    , dimensionUnit
     , duration
-    , durationUnit
     , fontFamily
     , fontWeight
     , gradient
-    , gradientStop
-    , lineCap
     )
 
-import DesignTokens.Color as Color exposing (Color, ColorSpace(..))
-import DesignTokens.CubicBezier as CubicBezier exposing (CubicBezier)
-import DesignTokens.Dimension as Dimension exposing (Dimension, DimensionUnit(..))
-import DesignTokens.Duration as Duration exposing (Duration, DurationUnit(..))
+import DesignTokens.Color exposing (Color, ColorSpace(..))
+import DesignTokens.CubicBezier exposing (CubicBezier)
+import DesignTokens.Dimension exposing (Dimension, DimensionUnit(..))
+import DesignTokens.Duration exposing (Duration, DurationUnit(..))
 import DesignTokens.FontFamily as FontFamily exposing (FontFamily)
-import DesignTokens.FontWeight as FontWeight exposing (FontWeight(..))
-import DesignTokens.Gradient as Gradient exposing (GradientStop)
-import DesignTokens.StrokeStyle exposing (LineCap(..))
+import DesignTokens.FontWeight exposing (FontWeight(..))
+import DesignTokens.Gradient exposing (GradientStop)
 import Fuzz exposing (Fuzzer)
 
 
@@ -147,8 +141,3 @@ gradientStop =
 gradient : Fuzzer (List GradientStop)
 gradient =
     Fuzz.listOfLengthBetween 1 5 gradientStop
-
-
-lineCap : Fuzzer LineCap
-lineCap =
-    Fuzz.oneOfValues [ Round, Butt, Square ]

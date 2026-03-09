@@ -1,9 +1,8 @@
 module DesignTokens.DurationTest exposing (suite)
 
-import DesignTokens.Duration as Duration exposing (Duration, DurationUnit(..), ms, s)
+import DesignTokens.Duration as Duration exposing (DurationUnit(..), ms, s)
 import DesignTokens.Fuzzers as Fuzzers
 import Expect
-import Fuzz
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Test exposing (Test, describe, fuzz, test)

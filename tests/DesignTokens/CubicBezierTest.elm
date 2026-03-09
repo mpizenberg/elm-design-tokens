@@ -3,7 +3,6 @@ module DesignTokens.CubicBezierTest exposing (suite)
 import DesignTokens.CubicBezier as CubicBezier exposing (CubicBezier)
 import DesignTokens.Fuzzers as Fuzzers
 import Expect
-import Fuzz
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Test exposing (Test, describe, fuzz, test)

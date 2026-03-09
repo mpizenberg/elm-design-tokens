@@ -118,11 +118,13 @@ toCssString strokeStyle =
 
         DetailedStyle detail ->
             let
+                dashStr : String
                 dashStr =
                     detail.dashArray
                         |> List.map Dimension.toCssString
                         |> String.join " "
 
+                capStr : String
                 capStr =
                     case detail.lineCap of
                         Round ->

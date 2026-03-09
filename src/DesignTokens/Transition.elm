@@ -98,9 +98,11 @@ encodeTimingFunction tf =
 toCssString : Transition -> String
 toCssString transition =
     let
+        durationStr : String
         durationStr =
             Duration.toCssString transition.duration
 
+        tfStr : String
         tfStr =
             case transition.timingFunction of
                 CubicBezierFunction cb ->
@@ -109,6 +111,7 @@ toCssString transition =
                 StepFunction s ->
                     s
 
+        delayStr : String
         delayStr =
             case transition.delay of
                 Just delay ->

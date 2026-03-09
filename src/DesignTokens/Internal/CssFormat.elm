@@ -22,26 +22,33 @@ formatFloat f =
     else
         let
             -- Multiply by 1e6, round, then work back
+            scaled : Int
             scaled =
                 round (f * 1000000)
 
+            isNegative : Bool
             isNegative =
                 scaled < 0
 
+            absScaled : Int
             absScaled =
                 abs scaled
 
+            intPart : Int
             intPart =
                 absScaled // 1000000
 
+            fracPart : Int
             fracPart =
                 remainderBy 1000000 absScaled
 
+            fracStr : String
             fracStr =
                 String.fromInt fracPart
                     |> String.padLeft 6 '0'
                     |> trimTrailingZeros
 
+            sign : String
             sign =
                 if isNegative then
                     "-"

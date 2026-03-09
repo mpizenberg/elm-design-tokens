@@ -1,6 +1,5 @@
 module DesignTokens.TransitionTest exposing (suite)
 
-import DesignTokens.CubicBezier as CubicBezier
 import DesignTokens.Duration as Duration
 import DesignTokens.Transition as Transition exposing (TimingFunction(..), Transition)
 import Expect

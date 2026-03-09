@@ -3,7 +3,6 @@ module DesignTokens.FontWeightTest exposing (suite)
 import DesignTokens.FontWeight as FontWeight exposing (FontWeight(..))
 import DesignTokens.Fuzzers as Fuzzers
 import Expect
-import Fuzz
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Test exposing (Test, describe, fuzz, test)

@@ -2,9 +2,8 @@ module DesignTokens.GradientTest exposing (suite)
 
 import DesignTokens.Color as Color
 import DesignTokens.Fuzzers as Fuzzers
-import DesignTokens.Gradient as Gradient exposing (Gradient, GradientStop)
+import DesignTokens.Gradient as Gradient exposing (Gradient)
 import Expect
-import Fuzz
 import Json.Decode as Decode
 import Test exposing (Test, describe, fuzz, test)
 

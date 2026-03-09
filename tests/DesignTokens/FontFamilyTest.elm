@@ -1,9 +1,8 @@
 module DesignTokens.FontFamilyTest exposing (suite)
 
-import DesignTokens.FontFamily as FontFamily exposing (FontFamily)
+import DesignTokens.FontFamily as FontFamily
 import DesignTokens.Fuzzers as Fuzzers
 import Expect
-import Fuzz
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Test exposing (Test, describe, fuzz, test)

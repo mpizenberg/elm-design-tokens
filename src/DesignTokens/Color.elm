@@ -383,15 +383,19 @@ toCssString color =
         ( c1, c2, c3 ) =
             color.components
 
+        fc1 : String
         fc1 =
             CssFormat.formatFloat c1
 
+        fc2 : String
         fc2 =
             CssFormat.formatFloat c2
 
+        fc3 : String
         fc3 =
             CssFormat.formatFloat c3
 
+        alphaPart : String
         alphaPart =
             if color.alpha == 1 then
                 ""

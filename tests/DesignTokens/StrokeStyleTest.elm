@@ -56,6 +56,7 @@ roundTripTests =
         , test "detailed style round-trips" <|
             \_ ->
                 let
+                    detailed : StrokeStyle
                     detailed =
                         DetailedStyle
                             { dashArray = [ Dimension.px 3, Dimension.px 6 ]

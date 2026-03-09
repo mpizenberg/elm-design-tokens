@@ -1,11 +1,9 @@
 module DesignTokens.ColorTest exposing (suite)
 
-import DesignTokens.Color as Color exposing (Color, ColorSpace(..))
+import DesignTokens.Color as Color exposing (ColorSpace(..))
 import DesignTokens.Fuzzers as Fuzzers
 import Expect
-import Fuzz
 import Json.Decode as Decode
-import Json.Encode as Encode
 import Test exposing (Test, describe, fuzz, test)
 
 
