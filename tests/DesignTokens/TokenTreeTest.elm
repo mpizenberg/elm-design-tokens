@@ -17,6 +17,7 @@ suite =
         , nameValidationTests
         , metadataTests
         , groupTests
+        , extendsTests
         ]
 
 
@@ -269,6 +270,69 @@ groupTests =
                                     Nothing
                         )
                     |> Expect.equal (Ok (Just (DeprecatedBool True)))
+        ]
+
+
+extendsTests : Test
+extendsTests =
+    describe "$extends"
+        [ test "parses $extends with simple reference" <|
+            \_ ->
+                """{"light":{"$extends":"{base}","primary":{"$type":"color","$value":{"colorSpace":"srgb","components":[1,0,0]}}}}"""
+                    |> decodeAndParse
+                    |> Result.map
+                        (\(TokenTree g) ->
+                            case Dict.get "light" g.children of
+                                Just (GroupNode sub) ->
+                                    sub.extends
+
+                                _ ->
+                                    Nothing
+                        )
+                    |> Expect.equal (Ok (Just [ "base" ]))
+        , test "parses $extends with dotted path" <|
+            \_ ->
+                """{"themes":{"dark":{"$extends":"{themes.light}","tok":{"$type":"number","$value":1}}}}"""
+                    |> decodeAndParse
+                    |> Result.map
+                        (\(TokenTree g) ->
+                            case Dict.get "themes" g.children of
+                                Just (GroupNode sub) ->
+                                    case Dict.get "dark" sub.children of
+                                        Just (GroupNode dark) ->
+                                            dark.extends
+
+                                        _ ->
+                                            Nothing
+
+                                _ ->
+                                    Nothing
+                        )
+                    |> Expect.equal (Ok (Just [ "themes", "light" ]))
+        , test "group without $extends has Nothing" <|
+            \_ ->
+                """{"colors":{"primary":{"$type":"color","$value":{"colorSpace":"srgb","components":[1,0,0]}}}}"""
+                    |> decodeAndParse
+                    |> Result.map
+                        (\(TokenTree g) ->
+                            case Dict.get "colors" g.children of
+                                Just (GroupNode sub) ->
+                                    sub.extends
+
+                                _ ->
+                                    Just [ "should not happen" ]
+                        )
+                    |> Expect.equal (Ok Nothing)
+        , test "rejects non-string $extends" <|
+            \_ ->
+                """{"light":{"$extends":42,"tok":{"$type":"number","$value":1}}}"""
+                    |> decodeAndParse
+                    |> Expect.err
+        , test "rejects $extends without reference braces" <|
+            \_ ->
+                """{"light":{"$extends":"base","tok":{"$type":"number","$value":1}}}"""
+                    |> decodeAndParse
+                    |> Expect.err
         ]
 
 

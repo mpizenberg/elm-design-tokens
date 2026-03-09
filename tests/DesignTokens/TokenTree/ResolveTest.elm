@@ -17,6 +17,7 @@ suite =
         , cycleDetectionTests
         , errorTests
         , rootTests
+        , extendsTests
         ]
 
 
@@ -272,6 +273,107 @@ rootTests =
                             >> List.map .typeName
                         )
                     |> Expect.equal (Ok [ "color" ])
+        ]
+
+
+extendsTests : Test
+extendsTests =
+    describe "$extends resolution"
+        [ test "inherits tokens from target group" <|
+            \_ ->
+                """{"base":{"$type":"number","a":{"$value":1}},"derived":{"$extends":"{base}","b":{"$type":"number","$value":2}}}"""
+                    |> parseAndResolve
+                    |> Result.map
+                        (List.map .path >> List.sort)
+                    |> Expect.equal
+                        (Ok
+                            [ [ "base", "a" ]
+                            , [ "derived", "a" ]
+                            , [ "derived", "b" ]
+                            ]
+                        )
+        , test "override wins over base" <|
+            \_ ->
+                """{"base":{"$type":"number","x":{"$value":1}},"derived":{"$extends":"{base}","x":{"$type":"number","$value":99}}}"""
+                    |> parseAndResolve
+                    |> Result.map
+                        (List.filter (\t -> t.path == [ "derived", "x" ])
+                            >> List.map .value
+                        )
+                    |> Expect.equal (Ok [ NumberValue 99 ])
+        , test "inherits $type from target group" <|
+            \_ ->
+                """{"base":{"$type":"number","x":{"$value":1}},"derived":{"$extends":"{base}","y":{"$value":2}}}"""
+                    |> parseAndResolve
+                    |> Result.map
+                        (List.filter (\t -> t.path == [ "derived", "y" ])
+                            >> List.map .typeName
+                        )
+                    |> Expect.equal (Ok [ "number" ])
+        , test "deep merge of nested groups" <|
+            \_ ->
+                """{"base":{"sub":{"$type":"number","a":{"$value":1}}},"derived":{"$extends":"{base}","sub":{"b":{"$type":"number","$value":2}}}}"""
+                    |> parseAndResolve
+                    |> Result.map
+                        (List.map .path >> List.sort)
+                    |> Expect.equal
+                        (Ok
+                            [ [ "base", "sub", "a" ]
+                            , [ "derived", "sub", "a" ]
+                            , [ "derived", "sub", "b" ]
+                            ]
+                        )
+        , test "chained extends (A extends B extends C)" <|
+            \_ ->
+                """{"c":{"$type":"number","x":{"$value":1}},"b":{"$extends":"{c}","y":{"$type":"number","$value":2}},"a":{"$extends":"{b}","z":{"$type":"number","$value":3}}}"""
+                    |> parseAndResolve
+                    |> Result.map
+                        (List.filter (\t -> List.head t.path == Just "a")
+                            >> List.map .path
+                            >> List.sort
+                        )
+                    |> Expect.equal
+                        (Ok
+                            [ [ "a", "x" ]
+                            , [ "a", "y" ]
+                            , [ "a", "z" ]
+                            ]
+                        )
+        , test "target not found" <|
+            \_ ->
+                """{"derived":{"$extends":"{nonexistent}","a":{"$type":"number","$value":1}}}"""
+                    |> parseAndResolve
+                    |> expectErrorType
+                        (\err ->
+                            case err of
+                                ExtendsTargetNotFound _ [ "nonexistent" ] ->
+                                    True
+
+                                _ ->
+                                    False
+                        )
+        , test "circular extends" <|
+            \_ ->
+                """{"a":{"$extends":"{b}","x":{"$type":"number","$value":1}},"b":{"$extends":"{a}","y":{"$type":"number","$value":2}}}"""
+                    |> parseAndResolve
+                    |> expectErrorType
+                        (\err ->
+                            case err of
+                                CircularExtends _ ->
+                                    True
+
+                                _ ->
+                                    False
+                        )
+        , test "extends with dotted path to nested group" <|
+            \_ ->
+                """{"themes":{"light":{"$type":"color","bg":{"$value":{"colorSpace":"srgb","components":[1,1,1]}}}},"dark":{"$extends":"{themes.light}","bg":{"$type":"color","$value":{"colorSpace":"srgb","components":[0,0,0]}}}}"""
+                    |> parseAndResolve
+                    |> Result.map
+                        (List.filter (\t -> List.head t.path == Just "dark")
+                            >> List.map .path
+                        )
+                    |> Expect.equal (Ok [ [ "dark", "bg" ] ])
         ]
 
 

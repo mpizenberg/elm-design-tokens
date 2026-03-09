@@ -157,10 +157,11 @@ The parser modules expose:
 
 ### Component 2: CLI Code Generator
 
-A Node CLI tool that reads `.tokens.json` files and produces typed Elm modules.
-The generation logic is written in Elm using [elm-syntax-dsl][elm-syntax-dsl]
-and compiled to JavaScript via `elm make`. A thin Node.js wrapper handles
-file I/O and CLI argument parsing.
+A Node CLI tool that reads `.tokens.json` or `.resolver.json` files and produces
+typed Elm modules. The generation logic is written in Elm using
+[elm-syntax-dsl][elm-syntax-dsl] and compiled to JavaScript via `elm make`.
+A thin Node.js wrapper handles file I/O, CLI argument parsing, and resolver
+processing.
 
 #### CLI Module Structure
 
@@ -168,7 +169,7 @@ file I/O and CLI argument parsing.
 cli/
 ├── src/
 │   ├── Main.elm              -- Platform.worker: flags → port output
-│   ├── Generate.elm          -- List ResolvedToken → Elm.CodeGen.File → String
+│   ├── Generate.elm          -- Constants + Theme module generation
 │   └── Generate/
 │       ├── Expression.elm    -- TokenValue → Elm.CodeGen.Expression (all 15 types)
 │       ├── Naming.elm        -- Token path → camelCase Elm identifier
@@ -176,14 +177,15 @@ cli/
 ├── tests/
 │   └── Generate/
 │       ├── ExpressionTest.elm
-│       └── NamingTest.elm
+│       ├── NamingTest.elm
+│       └── ThemeTest.elm
 ├── elm.json                  -- Application project (deps: elm-syntax-dsl + ../src)
-└── index.mjs                 -- Node CLI entry point
+└── index.mjs                 -- Node CLI entry point + resolver processing
 ```
 
 The CLI is packaged in `package.json` with a `"bin"` field, so users invoke it
 via `npx elm-design-tokens`. The compiled Elm worker (`worker.js`) is built
-with `pnpm build:cli` and auto-built before npm publish via `prepublishOnly`.
+with `pnpm cli:build` and auto-built before npm publish via `prepublishOnly`.
 
 #### How elm-syntax-dsl Works
 
@@ -303,50 +305,70 @@ Key features of the generated code:
   duration, cubicBezier, number, string, boolean, shadow, border, strokeStyle,
   gradient, typography, transition
 
-#### Theming Support (Phase 3b — planned)
+#### Theming Support (via DTCG Resolver Module)
 
-When a token file uses `$extends` or the CLI detects multiple token sets
-(e.g., `light.tokens.json` and `dark.tokens.json` sharing the same structure),
-the generator will produce a `Theme` record:
+The CLI supports the [DTCG Resolver Module 2025.10][resolver-spec] for
+multi-file theming. A `.resolver.json` file defines sets (shared token sources),
+modifiers (conditional contexts like light/dark), and resolution order.
+
+[resolver-spec]: https://www.designtokens.org/tr/drafts/resolver/
+
+With `--enumerate <modifier>`, the CLI fans out one modifier axis as
+`Theme` variants. Tokens identical across all contexts become top-level
+constants; tokens that differ go into a `Theme` record type with variant
+functions.
+
+Given `tokens.resolver.json` referencing `base.tokens.json` (spacing),
+`light.tokens.json`, and `dark.tokens.json`:
+
+```bash
+npx elm-design-tokens tokens.resolver.json --enumerate theme -m Tokens
+```
+
+Generates:
 
 ```elm
-module Tokens exposing (..)
+module Tokens exposing (Theme, dark, light, spacingMedium, spacingSmall)
 
-import DesignTokens.Color exposing (Color)
-import DesignTokens.Dimension exposing (Dimension)
+import DesignTokens.Color as Color exposing (Color)
+import DesignTokens.Dimension as Dimension exposing (Dimension)
 
 type alias Theme =
-    { colorsPrimary : Color
-    , colorsSecondary : Color
-    , spacingSmall : Dimension
-    , spacingMedium : Dimension
-    }
+    { colorsBackground : Color }
 
 light : Theme
 light =
-    { colorsPrimary = Color.srgb 0.2 0.4 0.8
-    , colorsSecondary = Color.srgb 0.2 0.4 0.8
-    , spacingSmall = Dimension.px 8
-    , spacingMedium = Dimension.px 16
-    }
+    { colorsBackground = Color.srgb 1 1 1 }
 
 dark : Theme
 dark =
-    { colorsPrimary = Color.srgb 0.8 0.8 1.0
-    , colorsSecondary = Color.srgb 0.6 0.6 0.9
-    , spacingSmall = Dimension.px 8
-    , spacingMedium = Dimension.px 16
-    }
+    { colorsBackground = Color.srgb 0.1 0.1 0.1 }
+
+spacingMedium : Dimension
+spacingMedium =
+    Dimension.px 16
+
+spacingSmall : Dimension
+spacingSmall =
+    Dimension.px 8
 ```
 
-Users then thread `Theme` through their application:
+Without `--enumerate`, the CLI resolves a single set of inputs:
+
+```bash
+npx elm-design-tokens tokens.resolver.json --input theme=dark -m Tokens
+```
+
+This produces flat constants (same as normal `.tokens.json` mode).
+
+Users thread `Theme` through their application:
 
 ```elm
 view : Theme -> Model -> Html Msg
 view theme model =
     div
-        [ style "color" (Color.toCssString theme.colorsPrimary)
-        , style "padding" (Dimension.toCssString theme.spacingMedium)
+        [ style "background" (Color.toCssString theme.colorsBackground)
+        , style "padding" (Dimension.toCssString spacingMedium)
         ]
         [ text "Hello" ]
 ```
@@ -371,6 +393,12 @@ npx elm-design-tokens --output src/Tokens.elm --module Tokens tokens.json
 
 # Or pipe to stdout
 npx elm-design-tokens --module Tokens tokens.json
+
+# Resolver: single resolution (flat constants)
+npx elm-design-tokens tokens.resolver.json --input theme=dark -m Tokens
+
+# Resolver: enumerate modifier as Theme variants
+npx elm-design-tokens tokens.resolver.json --enumerate theme -m Tokens -o src/Tokens.elm
 ```
 
 CLI options:
@@ -379,6 +407,8 @@ CLI options:
 |--------|-------------|
 | `--output, -o <path>` | Output `.elm` file path (default: stdout) |
 | `--module, -m <name>` | Elm module name (default: derived from output path, or `Tokens`) |
+| `--input <key=value>` | Set modifier value (repeatable) |
+| `--enumerate <modifier>` | Fan out modifier as Theme variants |
 
 ### Use in Elm
 
@@ -426,8 +456,12 @@ Add to your build script or npm scripts:
    Packaged in `package.json` with `bin` field for `npx elm-design-tokens`.
    `ResolvedToken` extended with `aliasOf : Maybe Path` for alias tracking.
    27 CLI tests, 3 new package tests (209 total).
-4. **Phase 3b — Theming + `$extends`**: Multi-file token sets
-   (e.g., `light.tokens.json` + `dark.tokens.json`) generating `Theme` record
-   types + variant functions. Resolve `$extends` (group inheritance via deep merge).
+4. **Phase 3b — Theming + `$extends`** *(done)*: `$extends` deep merge in the
+   resolver (DTCG Format Module 2025.10). DTCG Resolver Module 2025.10 support
+   (`.resolver.json` files with sets, modifiers, and resolution order). Theme code
+   generation with `--enumerate <modifier>`: tokens identical across all contexts
+   become top-level constants, varying tokens go into a `Theme` record type with
+   variant functions using Elm record update syntax. 13 new package tests (195 total),
+   9 new CLI tests (36 total).
 5. **Phase 4 — Ecosystem bridges**: Optional packages for `elm-css` and `elm-ui`
    integration.

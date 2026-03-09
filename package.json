@@ -19,7 +19,7 @@
     "format:check": "elm-format src/ tests/ cli/src/ cli/tests/ --validate",
     "lint": "elm-review",
     "postinstall": "elm-tooling install",
-    "prepublishOnly": "npm run build:cli"
+    "prepublishOnly": "npm run cli:build"
   },
   "devDependencies": {
     "elm-review": "^2.13.5",

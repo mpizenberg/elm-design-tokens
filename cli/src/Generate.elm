@@ -1,9 +1,10 @@
-module Generate exposing (generateModule)
+module Generate exposing (generateModule, generateThemeModule)
 
 {-| Generate Elm module source code from resolved tokens.
 -}
 
-import DesignTokens.Token exposing (ResolvedToken)
+import DesignTokens.Token exposing (ResolvedToken, TokenValue)
+import Dict exposing (Dict)
 import Elm.CodeGen as CG
 import Elm.Pretty
 import Generate.Expression as Expression
@@ -39,6 +40,311 @@ generateModule moduleName tokens =
             CG.file moduleDecl imports declarations Nothing
     in
     Elm.Pretty.pretty 100 file
+
+
+{-| Generate a themed Elm module from variant name/token pairs.
+
+Tokens that are identical across all variants become top-level constants.
+Tokens that differ go into a `Theme` record type with variant functions.
+Returns an error if variants have mismatched token paths.
+
+-}
+generateThemeModule : String -> List ( String, List ResolvedToken ) -> Result String String
+generateThemeModule moduleName variants =
+    case variants of
+        [] ->
+            Err "No variants provided"
+
+        ( baseName, baseTokens ) :: restVariants ->
+            let
+                basePaths : List (List String)
+                basePaths =
+                    List.map .path baseTokens
+                        |> List.sortBy (String.join ".")
+
+                mismatch : Maybe String
+                mismatch =
+                    findMismatch basePaths restVariants
+            in
+            case mismatch of
+                Just variantName ->
+                    Err ("Variant \"" ++ variantName ++ "\" has different token paths than \"" ++ baseName ++ "\"")
+
+                Nothing ->
+                    let
+                        -- Build a Dict from path key to token for the base
+                        baseDict : Dict String ResolvedToken
+                        baseDict =
+                            tokensToDict baseTokens
+
+                        restDicts : List ( String, Dict String ResolvedToken )
+                        restDicts =
+                            List.map (\( name, tokens ) -> ( name, tokensToDict tokens )) restVariants
+
+                        -- Classify: constant (same across all) vs varying
+                        classified : { constants : List ResolvedToken, varying : List String }
+                        classified =
+                            classifyTokens baseDict restDicts
+
+                        -- Build the module
+                        modName : List String
+                        modName =
+                            String.split "." moduleName
+
+                        allTokens : List ResolvedToken
+                        allTokens =
+                            List.concatMap Tuple.second variants
+
+                        imports : List CG.Import
+                        imports =
+                            Imports.collectImports allTokens
+
+                        constantDecls : List CG.Declaration
+                        constantDecls =
+                            List.map generateDeclaration classified.constants
+
+                        themeDecls : List CG.Declaration
+                        themeDecls =
+                            generateThemeDeclarations classified.varying baseDict baseName restDicts
+
+                        exposingList : List CG.TopLevelExpose
+                        exposingList =
+                            let
+                                constantExposes : List CG.TopLevelExpose
+                                constantExposes =
+                                    List.map (\t -> CG.funExpose (Naming.pathToIdentifier t.path)) classified.constants
+
+                                themeExposes : List CG.TopLevelExpose
+                                themeExposes =
+                                    if List.isEmpty classified.varying then
+                                        []
+
+                                    else
+                                        CG.typeOrAliasExpose "Theme"
+                                            :: List.map (\( name, _ ) -> CG.funExpose name) variants
+                            in
+                            themeExposes ++ constantExposes
+
+                        moduleDecl : CG.Module
+                        moduleDecl =
+                            CG.normalModule modName exposingList
+
+                        file : CG.File
+                        file =
+                            CG.file moduleDecl imports (themeDecls ++ constantDecls) Nothing
+                    in
+                    Ok (Elm.Pretty.pretty 100 file)
+
+
+findMismatch : List (List String) -> List ( String, List ResolvedToken ) -> Maybe String
+findMismatch basePaths variants =
+    case variants of
+        [] ->
+            Nothing
+
+        ( name, tokens ) :: rest ->
+            let
+                variantPaths : List (List String)
+                variantPaths =
+                    List.map .path tokens
+                        |> List.sortBy (String.join ".")
+            in
+            if basePaths == variantPaths then
+                findMismatch basePaths rest
+
+            else
+                Just name
+
+
+tokensToDict : List ResolvedToken -> Dict String ResolvedToken
+tokensToDict tokens =
+    Dict.fromList (List.map (\t -> ( String.join "." t.path, t )) tokens)
+
+
+{-| Classify tokens into constants (same value in all variants) and varying.
+-}
+classifyTokens :
+    Dict String ResolvedToken
+    -> List ( String, Dict String ResolvedToken )
+    -> { constants : List ResolvedToken, varying : List String }
+classifyTokens baseDict restDicts =
+    Dict.foldl
+        (\pathKey baseToken acc ->
+            if isConstant pathKey baseToken restDicts then
+                { acc | constants = baseToken :: acc.constants }
+
+            else
+                { acc | varying = pathKey :: acc.varying }
+        )
+        { constants = [], varying = [] }
+        baseDict
+        |> (\r ->
+                { constants = List.sortBy (\t -> String.join "." t.path) r.constants
+                , varying = List.sort r.varying
+                }
+           )
+
+
+isConstant : String -> ResolvedToken -> List ( String, Dict String ResolvedToken ) -> Bool
+isConstant pathKey baseToken restDicts =
+    List.all
+        (\( _, dict ) ->
+            case Dict.get pathKey dict of
+                Just other ->
+                    other.value == baseToken.value
+
+                Nothing ->
+                    False
+        )
+        restDicts
+
+
+{-| Generate Theme type alias + variant declarations.
+-}
+generateThemeDeclarations :
+    List String
+    -> Dict String ResolvedToken
+    -> String
+    -> List ( String, Dict String ResolvedToken )
+    -> List CG.Declaration
+generateThemeDeclarations varyingKeys baseDict baseName restDicts =
+    if List.isEmpty varyingKeys then
+        []
+
+    else
+        let
+            -- Type alias
+            themeFields : List ( String, CG.TypeAnnotation )
+            themeFields =
+                List.filterMap
+                    (\pathKey ->
+                        Dict.get pathKey baseDict
+                            |> Maybe.map
+                                (\token ->
+                                    ( Naming.pathToIdentifier token.path
+                                    , tokenTypeAnnotation token.typeName
+                                    )
+                                )
+                    )
+                    varyingKeys
+
+            themeTypeDecl : CG.Declaration
+            themeTypeDecl =
+                CG.aliasDecl Nothing "Theme" [] (CG.recordAnn themeFields)
+
+            -- Base variant (full record literal)
+            baseFields : List ( String, CG.Expression )
+            baseFields =
+                List.filterMap
+                    (\pathKey ->
+                        Dict.get pathKey baseDict
+                            |> Maybe.map
+                                (\token ->
+                                    ( Naming.pathToIdentifier token.path
+                                    , Expression.tokenValueToExpression token.value
+                                    )
+                                )
+                    )
+                    varyingKeys
+
+            baseDecl : CG.Declaration
+            baseDecl =
+                CG.valDecl Nothing
+                    (Just (CG.typed "Theme" []))
+                    baseName
+                    (CG.record baseFields)
+
+            -- Other variants (record update or full record)
+            otherDecls : List CG.Declaration
+            otherDecls =
+                List.map
+                    (\( varName, dict ) ->
+                        generateVariantDecl varyingKeys baseDict baseName varName dict
+                    )
+                    restDicts
+        in
+        themeTypeDecl :: baseDecl :: otherDecls
+
+
+generateVariantDecl :
+    List String
+    -> Dict String ResolvedToken
+    -> String
+    -> String
+    -> Dict String ResolvedToken
+    -> CG.Declaration
+generateVariantDecl varyingKeys baseDict baseName varName varDict =
+    let
+        diffFields : List ( String, CG.Expression )
+        diffFields =
+            List.filterMap
+                (\pathKey ->
+                    let
+                        baseValue : Maybe TokenValue
+                        baseValue =
+                            Dict.get pathKey baseDict |> Maybe.map .value
+
+                        varToken : Maybe ResolvedToken
+                        varToken =
+                            Dict.get pathKey varDict
+                    in
+                    case ( baseValue, varToken ) of
+                        ( Just bv, Just vt ) ->
+                            if bv == vt.value then
+                                Nothing
+
+                            else
+                                Just
+                                    ( Naming.pathToIdentifier vt.path
+                                    , Expression.tokenValueToExpression vt.value
+                                    )
+
+                        ( _, Just vt ) ->
+                            Just
+                                ( Naming.pathToIdentifier vt.path
+                                , Expression.tokenValueToExpression vt.value
+                                )
+
+                        _ ->
+                            Nothing
+                )
+                varyingKeys
+
+        expr : CG.Expression
+        expr =
+            if List.isEmpty diffFields then
+                CG.val baseName
+
+            else if List.length diffFields == List.length varyingKeys then
+                -- All fields differ → full record literal
+                let
+                    allFields : List ( String, CG.Expression )
+                    allFields =
+                        List.filterMap
+                            (\pathKey ->
+                                Dict.get pathKey varDict
+                                    |> Maybe.map
+                                        (\token ->
+                                            ( Naming.pathToIdentifier token.path
+                                            , Expression.tokenValueToExpression token.value
+                                            )
+                                        )
+                            )
+                            varyingKeys
+                in
+                CG.record allFields
+
+            else
+                CG.update baseName diffFields
+    in
+    CG.valDecl Nothing
+        (Just (CG.typed "Theme" []))
+        varName
+        expr
+
+
+
+-- SHARED HELPERS
 
 
 generateDeclaration : ResolvedToken -> CG.Declaration

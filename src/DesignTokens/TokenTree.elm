@@ -33,6 +33,7 @@ type alias RawGroup =
     , description : Maybe String
     , extensions : Maybe Decode.Value
     , deprecated : Maybe Deprecated
+    , extends : Maybe Path
     , children : Dict String TreeNode
     }
 
@@ -106,8 +107,8 @@ parseGroupEntries entries =
     let
         fold :
             ( String, Decode.Value )
-            -> Decoder { type_ : Maybe String, description : Maybe String, extensions : Maybe Decode.Value, deprecated : Maybe Deprecated, children : List ( String, TreeNode ) }
-            -> Decoder { type_ : Maybe String, description : Maybe String, extensions : Maybe Decode.Value, deprecated : Maybe Deprecated, children : List ( String, TreeNode ) }
+            -> Decoder { type_ : Maybe String, description : Maybe String, extensions : Maybe Decode.Value, deprecated : Maybe Deprecated, extends : Maybe Path, children : List ( String, TreeNode ) }
+            -> Decoder { type_ : Maybe String, description : Maybe String, extensions : Maybe Decode.Value, deprecated : Maybe Deprecated, extends : Maybe Path, children : List ( String, TreeNode ) }
         fold ( key, val ) accDecoder =
             accDecoder
                 |> Decode.andThen
@@ -140,8 +141,16 @@ parseGroupEntries entries =
                                     Decode.fail "$deprecated must be a boolean or string"
 
                         else if key == "$extends" then
-                            -- Store but don't resolve; Phase 3 handles $extends
-                            Decode.succeed acc
+                            case Decode.decodeValue Decode.string val of
+                                Ok s ->
+                                    if isAliasString s then
+                                        Decode.succeed { acc | extends = Just (parseAliasPath s) }
+
+                                    else
+                                        Decode.fail "$extends must be a reference like \"{group.name}\""
+
+                                Err _ ->
+                                    Decode.fail "$extends must be a string reference like \"{group.name}\""
 
                         else if key == "$root" then
                             -- $root allows a group to also be a token
@@ -174,6 +183,7 @@ parseGroupEntries entries =
                 , description : Maybe String
                 , extensions : Maybe Decode.Value
                 , deprecated : Maybe Deprecated
+                , extends : Maybe Path
                 , children : List ( String, TreeNode )
                 }
         initial =
@@ -182,6 +192,7 @@ parseGroupEntries entries =
                 , description = Nothing
                 , extensions = Nothing
                 , deprecated = Nothing
+                , extends = Nothing
                 , children = []
                 }
     in
@@ -192,6 +203,7 @@ parseGroupEntries entries =
                 , description = acc.description
                 , extensions = acc.extensions
                 , deprecated = acc.deprecated
+                , extends = acc.extends
                 , children = Dict.fromList acc.children
                 }
             )

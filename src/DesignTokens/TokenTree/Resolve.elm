@@ -26,6 +26,8 @@ type ResolutionError
     | DecodeError Path String String
     | UnresolvedAlias Path Path
     | CircularReference (List Path)
+    | ExtendsTargetNotFound Path Path
+    | CircularExtends (List Path)
 
 
 {-| Resolve a token tree into a flat list of resolved tokens.
@@ -37,26 +39,31 @@ the first.
 -}
 resolve : TokenTree -> Result (List ResolutionError) (List ResolvedToken)
 resolve (TokenTree rootGroup) =
-    let
-        -- Pass 1: Flatten tree, inherit types
-        flatResult : { tokens : Dict String FlatToken, errors : List ResolutionError }
-        flatResult =
-            flattenGroup [] Nothing rootGroup
+    case resolveExtends rootGroup of
+        Err extendsErrors ->
+            Err extendsErrors
 
-        -- Pass 2: Decode literals and resolve aliases
-        resolveResult : { resolved : Dict String ResolvedToken, errors : List ResolutionError }
-        resolveResult =
-            resolveFlat flatResult.tokens
+        Ok resolvedRoot ->
+            let
+                -- Pass 1: Flatten tree, inherit types
+                flatResult : { tokens : Dict String FlatToken, errors : List ResolutionError }
+                flatResult =
+                    flattenGroup [] Nothing resolvedRoot
 
-        allErrors : List ResolutionError
-        allErrors =
-            flatResult.errors ++ resolveResult.errors
-    in
-    if List.isEmpty allErrors then
-        Ok (Dict.values resolveResult.resolved)
+                -- Pass 2: Decode literals and resolve aliases
+                resolveResult : { resolved : Dict String ResolvedToken, errors : List ResolutionError }
+                resolveResult =
+                    resolveFlat flatResult.tokens
 
-    else
-        Err allErrors
+                allErrors : List ResolutionError
+                allErrors =
+                    flatResult.errors ++ resolveResult.errors
+            in
+            if List.isEmpty allErrors then
+                Ok (Dict.values resolveResult.resolved)
+
+            else
+                Err allErrors
 
 
 
@@ -405,6 +412,227 @@ detectCycles unresolved =
                     |> List.map keyToPath
         in
         [ CircularReference cyclePaths ]
+
+
+
+-- RESOLVE $EXTENDS PRE-PASS
+
+
+{-| Resolve all `$extends` in the tree via iterative deep merge.
+
+Groups with `$extends` inherit children (and metadata) from their target group.
+The extending group's own values override the target's. Resolution is iterative
+to support chained extends (A extends B extends C).
+
+-}
+resolveExtends : RawGroup -> Result (List ResolutionError) RawGroup
+resolveExtends rootGroup =
+    let
+        pending : List ( Path, Path )
+        pending =
+            collectExtends [] rootGroup
+    in
+    resolveExtendsLoop rootGroup pending
+
+
+resolveExtendsLoop :
+    RawGroup
+    -> List ( Path, Path )
+    -> Result (List ResolutionError) RawGroup
+resolveExtendsLoop rootGroup pending =
+    if List.isEmpty pending then
+        Ok rootGroup
+
+    else
+        let
+            result :
+                { newRoot : RawGroup
+                , stillPending : List ( Path, Path )
+                , errors : List ResolutionError
+                , madeProgress : Bool
+                }
+            result =
+                List.foldl
+                    (\( groupPath, targetPath ) acc ->
+                        case lookupGroup targetPath acc.newRoot of
+                            Nothing ->
+                                { acc
+                                    | errors =
+                                        ExtendsTargetNotFound groupPath targetPath :: acc.errors
+                                }
+
+                            Just targetGroup ->
+                                if targetGroup.extends /= Nothing then
+                                    -- Target still has unresolved $extends, defer
+                                    { acc
+                                        | stillPending =
+                                            ( groupPath, targetPath ) :: acc.stillPending
+                                    }
+
+                                else
+                                    case lookupGroup groupPath acc.newRoot of
+                                        Nothing ->
+                                            -- Extending group disappeared (shouldn't happen)
+                                            acc
+
+                                        Just extendingGroup ->
+                                            let
+                                                merged : RawGroup
+                                                merged =
+                                                    deepMerge targetGroup extendingGroup
+                                            in
+                                            { acc
+                                                | newRoot = setGroup groupPath merged acc.newRoot
+                                                , madeProgress = True
+                                            }
+                    )
+                    { newRoot = rootGroup
+                    , stillPending = []
+                    , errors = []
+                    , madeProgress = False
+                    }
+                    pending
+        in
+        if not (List.isEmpty result.errors) then
+            Err result.errors
+
+        else if result.madeProgress then
+            resolveExtendsLoop result.newRoot result.stillPending
+
+        else
+            -- No progress — remaining are circular
+            Err
+                (List.map (\( groupPath, _ ) -> CircularExtends [ groupPath ]) result.stillPending)
+
+
+{-| Collect all groups that have `$extends`, returning (groupPath, targetPath) pairs.
+-}
+collectExtends : Path -> RawGroup -> List ( Path, Path )
+collectExtends parentPath group =
+    Dict.foldl
+        (\key node acc ->
+            case node of
+                GroupNode subGroup ->
+                    let
+                        subPath : Path
+                        subPath =
+                            parentPath ++ [ key ]
+
+                        fromSub : List ( Path, Path )
+                        fromSub =
+                            collectExtends subPath subGroup
+                    in
+                    case subGroup.extends of
+                        Just targetPath ->
+                            ( subPath, targetPath ) :: fromSub ++ acc
+
+                        Nothing ->
+                            fromSub ++ acc
+
+                TokenNode _ ->
+                    acc
+        )
+        []
+        group.children
+
+
+{-| Look up a group at the given path in the tree.
+-}
+lookupGroup : Path -> RawGroup -> Maybe RawGroup
+lookupGroup path root =
+    case path of
+        [] ->
+            Just root
+
+        segment :: rest ->
+            case Dict.get segment root.children of
+                Just (GroupNode subGroup) ->
+                    lookupGroup rest subGroup
+
+                _ ->
+                    Nothing
+
+
+{-| Replace the group at the given path in the tree.
+-}
+setGroup : Path -> RawGroup -> RawGroup -> RawGroup
+setGroup path newGroup root =
+    case path of
+        [] ->
+            newGroup
+
+        [ segment ] ->
+            { root | children = Dict.insert segment (GroupNode newGroup) root.children }
+
+        segment :: rest ->
+            case Dict.get segment root.children of
+                Just (GroupNode subGroup) ->
+                    { root
+                        | children =
+                            Dict.insert segment
+                                (GroupNode (setGroup rest newGroup subGroup))
+                                root.children
+                    }
+
+                _ ->
+                    -- Path doesn't exist; shouldn't happen if collectExtends was correct
+                    root
+
+
+{-| Deep merge two groups: base (target) and override (extending group).
+
+Override values win for metadata. Children are merged recursively:
+both groups → recurse, otherwise override wins.
+
+-}
+deepMerge : RawGroup -> RawGroup -> RawGroup
+deepMerge base override =
+    { type_ =
+        case override.type_ of
+            Just _ ->
+                override.type_
+
+            Nothing ->
+                base.type_
+    , description =
+        case override.description of
+            Just _ ->
+                override.description
+
+            Nothing ->
+                base.description
+    , extensions =
+        case override.extensions of
+            Just _ ->
+                override.extensions
+
+            Nothing ->
+                base.extensions
+    , deprecated =
+        case override.deprecated of
+            Just _ ->
+                override.deprecated
+
+            Nothing ->
+                base.deprecated
+    , extends = Nothing
+    , children =
+        Dict.merge
+            (\key baseNode acc -> Dict.insert key baseNode acc)
+            (\key baseNode overrideNode acc ->
+                case ( baseNode, overrideNode ) of
+                    ( GroupNode baseGroup, GroupNode overrideGroup ) ->
+                        Dict.insert key (GroupNode (deepMerge baseGroup overrideGroup)) acc
+
+                    _ ->
+                        -- Override wins (token overrides token, or token overrides group, etc.)
+                        Dict.insert key overrideNode acc
+            )
+            (\key overrideNode acc -> Dict.insert key overrideNode acc)
+            base.children
+            override.children
+            Dict.empty
+    }
 
 
 
