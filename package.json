@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "make:docs": "elm make --docs=docs.json",
     "test": "elm-test",
     "format": "elm-format --yes src/ tests/",
     "format:check": "elm-format src/ tests/ --validate",
