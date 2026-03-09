@@ -106,6 +106,41 @@ aliasTests =
                             , ( [ "b" ], NumberValue 42 )
                             ]
                         )
+        , test "literal has aliasOf Nothing" <|
+            \_ ->
+                """{"a":{"$type":"number","$value":42}}"""
+                    |> parseAndResolve
+                    |> Result.map (List.map .aliasOf)
+                    |> Expect.equal (Ok [ Nothing ])
+        , test "alias has aliasOf with target path" <|
+            \_ ->
+                """{"a":{"$type":"number","$value":42},"b":{"$type":"number","$value":"{a}"}}"""
+                    |> parseAndResolve
+                    |> Result.map
+                        (List.sortBy (.path >> String.join ".")
+                            >> List.map (\t -> ( t.path, t.aliasOf ))
+                        )
+                    |> Expect.equal
+                        (Ok
+                            [ ( [ "a" ], Nothing )
+                            , ( [ "b" ], Just [ "a" ] )
+                            ]
+                        )
+        , test "alias chain preserves direct target" <|
+            \_ ->
+                """{"a":{"$type":"number","$value":42},"b":{"$type":"number","$value":"{a}"},"c":{"$type":"number","$value":"{b}"}}"""
+                    |> parseAndResolve
+                    |> Result.map
+                        (List.sortBy (.path >> String.join ".")
+                            >> List.map (\t -> ( t.path, t.aliasOf ))
+                        )
+                    |> Expect.equal
+                        (Ok
+                            [ ( [ "a" ], Nothing )
+                            , ( [ "b" ], Just [ "a" ] )
+                            , ( [ "c" ], Just [ "b" ] )
+                            ]
+                        )
         , test "resolves alias chain" <|
             \_ ->
                 """{"a":{"$type":"number","$value":42},"b":{"$type":"number","$value":"{a}"},"c":{"$type":"number","$value":"{b}"}}"""

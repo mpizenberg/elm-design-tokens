@@ -79,6 +79,7 @@ type alias ResolvedToken =
     { path : Path
     , typeName : String
     , value : TokenValue
+    , aliasOf : Maybe Path
     , meta : TokenMeta
     }
 

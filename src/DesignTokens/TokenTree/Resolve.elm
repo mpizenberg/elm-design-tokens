@@ -265,6 +265,7 @@ decodeLiteral ( pathKey, flatToken ) acc =
                                 { path = path
                                 , typeName = flatToken.typeName
                                 , value = tokenValue
+                                , aliasOf = Nothing
                                 , meta = flatToken.meta
                                 }
                                 acc.resolved
@@ -336,6 +337,7 @@ resolveAliases unresolved allFlat acc =
                                                     { path = keyToPath pathKey
                                                     , typeName = flatToken.typeName
                                                     , value = resolvedTarget.value
+                                                    , aliasOf = Just targetPath
                                                     , meta = flatToken.meta
                                                     }
                                                     iterAcc.resolved

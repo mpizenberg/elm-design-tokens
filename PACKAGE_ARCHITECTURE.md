@@ -42,12 +42,13 @@ Where we diverge from travelm-agency:
   Unlike i18n (where output is `String` / `Html msg`), design tokens have rich types
   (`Color`, `Dimension`, `Typography`, `Shadow`, ...) that users need to manipulate,
   convert, and compose. These types live in a standalone Elm package.
-- **Code generation uses [elm-codegen][elm-codegen].**
-  Rather than writing our own Elm AST → source pipeline,
-  we use `mdgriffith/elm-codegen`, which provides a type-safe Elm API for
-  generating Elm code with automatic import management and type inference.
+- **Code generation uses [elm-syntax-dsl][elm-syntax-dsl].**
+  Rather than writing our own Elm AST → source pipeline, we use
+  `the-sett/elm-syntax-dsl` (the same library used by travelm-agency),
+  which provides a type-safe DSL for constructing Elm syntax trees and a
+  pretty printer that outputs elm-format compatible source code.
 
-[elm-codegen]: https://github.com/mdgriffith/elm-codegen
+[elm-syntax-dsl]: https://github.com/the-sett/elm-syntax-dsl
 
 ## Architecture Overview
 
@@ -69,20 +70,20 @@ The project is split into two components:
                       └────────────┬──────────────┘
                                    │ used by
                       ┌────────────▼──────────────┐
-                      │      CLI / Codegen         │
-                      │  (Node + elm-codegen)       │
+                      │   CLI (Node + elm-syntax-  │
+                      │   dsl, published to npm)   │
                       │                            │
                       │  1. Read .tokens.json      │
-                      │  2. Resolve $extends       │
-                      │  3. Generate Elm modules   │
+                      │  2. Parse + resolve (Elm)  │
+                      │  3. Build AST (CodeGen)    │
+                      │  4. Pretty-print to source │
                       └────────────┬──────────────┘
                                    │
                       ┌────────────▼──────────────┐
                       │   Generated Elm Modules    │
                       │                            │
-                      │  - Theme type              │
                       │  - Token constants          │
-                      │  - Accessor functions       │
+                      │  - (Theme records — future) │
                       └───────────────────────────┘
 ```
 
@@ -135,7 +136,9 @@ The parser modules expose:
 - **`TokenTree`** — `fromJson` to parse raw DTCG JSON into an unresolved tree
   of groups and tokens, with alias detection and name validation
 - **`TokenTree.Resolve`** — `resolve` to flatten the tree with `$type` inheritance,
-  decode literal values, resolve alias chains, and detect circular references
+  decode literal values, resolve alias chains, and detect circular references.
+  Each `ResolvedToken` tracks its alias target (`aliasOf : Maybe Path`) so
+  code generation can emit references instead of duplicated values
 
 #### Design Principles
 
@@ -154,30 +157,62 @@ The parser modules expose:
 
 ### Component 2: CLI Code Generator
 
-A Node CLI tool powered by [elm-codegen][elm-codegen].
-It reads `.tokens.json` files and produces Elm modules.
+A Node CLI tool that reads `.tokens.json` files and produces typed Elm modules.
+The generation logic is written in Elm using [elm-syntax-dsl][elm-syntax-dsl]
+and compiled to JavaScript via `elm make`. A thin Node.js wrapper handles
+file I/O and CLI argument parsing.
 
-#### How elm-codegen Works
+#### CLI Module Structure
 
-[elm-codegen][elm-codegen] is both an Elm package and a CLI.
-You write your code generator as an Elm program using the `Elm.*` API:
-
-```elm
--- codegen/Generate.elm
-Elm.declaration "primaryColor"
-    (Elm.apply
-        (Elm.value
-            { importFrom = [ "DesignTokens", "Color" ]
-            , name = "srgb"
-            , annotation = Nothing
-            }
-        )
-        [ Elm.float 0.2, Elm.float 0.4, Elm.float 0.8 ]
-    )
+```
+cli/
+├── src/
+│   ├── Main.elm              -- Platform.worker: flags → port output
+│   ├── Generate.elm          -- List ResolvedToken → Elm.CodeGen.File → String
+│   └── Generate/
+│       ├── Expression.elm    -- TokenValue → Elm.CodeGen.Expression (all 15 types)
+│       ├── Naming.elm        -- Token path → camelCase Elm identifier
+│       └── Imports.elm       -- Collect required imports from token types
+├── tests/
+│   └── Generate/
+│       ├── ExpressionTest.elm
+│       └── NamingTest.elm
+├── elm.json                  -- Application project (deps: elm-syntax-dsl + ../src)
+└── index.mjs                 -- Node CLI entry point
 ```
 
-elm-codegen then runs this program and writes the resulting `.elm` files.
-Imports and type annotations are computed automatically.
+The CLI is packaged in `package.json` with a `"bin"` field, so users invoke it
+via `npx elm-design-tokens`. The compiled Elm worker (`worker.js`) is built
+with `pnpm build:cli` and auto-built before npm publish via `prepublishOnly`.
+
+#### How elm-syntax-dsl Works
+
+[elm-syntax-dsl][elm-syntax-dsl] provides two modules:
+
+- **`Elm.CodeGen`** — a DSL for constructing Elm AST nodes (expressions,
+  declarations, type annotations, imports, modules)
+- **`Elm.Pretty`** — a pretty printer that renders the AST to elm-format
+  compatible source code
+
+Example from the generator:
+
+```elm
+import Elm.CodeGen as CG
+import Elm.Pretty
+
+-- Generates: colorsPrimary : Color
+--            colorsPrimary = Color.srgb 0.2 0.4 0.8
+CG.valDecl Nothing
+    (Just (CG.typed "Color" []))
+    "colorsPrimary"
+    (CG.apply
+        [ CG.fqVal [ "Color" ] "srgb"
+        , CG.float 0.2
+        , CG.float 0.4
+        , CG.float 0.8
+        ]
+    )
+```
 
 #### Generation Pipeline
 
@@ -192,16 +227,17 @@ TokenTree.Resolve.resolve   ── Inherit $type from groups
     │                           Decode literal values
     │                           Resolve alias chains (cycle detection)
     ▼
-List ResolvedToken          ── Flat list of typed tokens with paths
+List ResolvedToken          ── Flat list with typed values + alias tracking
     │
     ▼
-CLI: resolve $extends       ── Deep merge group inheritance (Phase 3)
+Generate.elm                ── Build Elm.CodeGen.File (declarations + imports)
+    │                           Alias tokens → reference other constants
+    │                           Literal tokens → constructor expressions
+    ▼
+Elm.Pretty.pretty           ── Render AST to elm-format compatible source
     │
     ▼
-Generate Elm declarations   ── elm-codegen API
-    │
-    ▼
-Output .elm files
+Output .elm file
 ```
 
 #### What Gets Generated
@@ -227,36 +263,51 @@ Given a token file like:
 }
 ```
 
-The generator produces:
+Running `npx elm-design-tokens --output src/Tokens.elm --module Tokens tokens.json`
+produces:
 
 ```elm
-module Tokens exposing (..)
+module Tokens exposing (colorsPrimary, colorsSecondary, spacingMedium, spacingSmall)
 
 import DesignTokens.Color as Color exposing (Color)
 import DesignTokens.Dimension as Dimension exposing (Dimension)
+
 
 colorsPrimary : Color
 colorsPrimary =
     Color.srgb 0.2 0.4 0.8
 
+
 colorsSecondary : Color
 colorsSecondary =
     colorsPrimary
 
-spacingSmall : Dimension
-spacingSmall =
-    Dimension.px 8
 
 spacingMedium : Dimension
 spacingMedium =
     Dimension.px 16
+
+
+spacingSmall : Dimension
+spacingSmall =
+    Dimension.px 8
 ```
 
-#### Theming Support
+Key features of the generated code:
+
+- **Explicit exposing list** — each constant is named in the module header
+- **Minimal imports** — only the types actually used are imported
+- **Alias preservation** — `colorsSecondary` references `colorsPrimary` directly,
+  not a duplicated literal value
+- **All 15 DTCG types supported** — color, dimension, fontFamily, fontWeight,
+  duration, cubicBezier, number, string, boolean, shadow, border, strokeStyle,
+  gradient, typography, transition
+
+#### Theming Support (Phase 3b — planned)
 
 When a token file uses `$extends` or the CLI detects multiple token sets
 (e.g., `light.tokens.json` and `dark.tokens.json` sharing the same structure),
-the generator produces a `Theme` record:
+the generator will produce a `Theme` record:
 
 ```elm
 module Tokens exposing (..)
@@ -315,20 +366,34 @@ elm install mpizenberg/elm-design-tokens
 ### Generate Code
 
 ```bash
-# Generate Elm modules from token files
-npx elm-design-tokens --output src/Tokens.elm tokens/
+# Generate Elm module from a token file
+npx elm-design-tokens --output src/Tokens.elm --module Tokens tokens.json
+
+# Or pipe to stdout
+npx elm-design-tokens --module Tokens tokens.json
 ```
+
+CLI options:
+
+| Option | Description |
+|--------|-------------|
+| `--output, -o <path>` | Output `.elm` file path (default: stdout) |
+| `--module, -m <name>` | Elm module name (default: derived from output path, or `Tokens`) |
 
 ### Use in Elm
 
 ```elm
-import Tokens exposing (Theme, light, dark)
+import Tokens exposing (colorsPrimary, spacingSmall)
 import DesignTokens.Color as Color
+import DesignTokens.Dimension as Dimension
 
-view : Theme -> Html msg
-view theme =
-    div [ style "color" (Color.toCssString theme.colorsPrimary) ]
-        [ text "Themed content" ]
+view : Html msg
+view =
+    div
+        [ style "color" (Color.toCssString colorsPrimary)
+        , style "padding" (Dimension.toCssString spacingSmall)
+        ]
+        [ text "Styled content" ]
 ```
 
 ### Integrate in Build
@@ -338,7 +403,7 @@ Add to your build script or npm scripts:
 ```json
 {
   "scripts": {
-    "codegen": "elm-design-tokens --output src/Tokens.elm tokens/",
+    "codegen": "elm-design-tokens --output src/Tokens.elm --module Tokens tokens.json",
     "build": "npm run codegen && elm make src/Main.elm"
   }
 }
@@ -353,9 +418,16 @@ Add to your build script or npm scripts:
    unresolved token tree (`TokenTree.fromJson`), then resolve `$type` inheritance
    and alias references with cycle detection (`TokenTree.Resolve.resolve`).
    Produces `List ResolvedToken` with typed values, paths, and metadata.
-   72 additional tests (179 total). `$extends` stored but deferred to Phase 3.
-3. **Phase 3 — Code generator**: elm-codegen based CLI that reads DTCG files,
-   resolves `$extends` (group inheritance via deep merge), and emits typed Elm
-   modules (constants and/or `Theme` records).
-4. **Phase 4 — Ecosystem bridges**: Optional packages for `elm-css` and `elm-ui`
+   72 additional tests (179 total). `$extends` stored but deferred to Phase 3b.
+3. **Phase 3a — Code generator (constants)** *(done)*: CLI tool using
+   `the-sett/elm-syntax-dsl` that reads a `.tokens.json` file and generates a
+   typed Elm module with top-level constants. Supports all 15 DTCG types,
+   preserves alias references, generates elm-format compatible output.
+   Packaged in `package.json` with `bin` field for `npx elm-design-tokens`.
+   `ResolvedToken` extended with `aliasOf : Maybe Path` for alias tracking.
+   27 CLI tests, 3 new package tests (209 total).
+4. **Phase 3b — Theming + `$extends`**: Multi-file token sets
+   (e.g., `light.tokens.json` + `dark.tokens.json`) generating `Theme` record
+   types + variant functions. Resolve `$extends` (group inheritance via deep merge).
+5. **Phase 4 — Ecosystem bridges**: Optional packages for `elm-css` and `elm-ui`
    integration.

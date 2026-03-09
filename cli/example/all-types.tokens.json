@@ -1,0 +1,105 @@
+{
+  "colors": {
+    "$type": "color",
+    "primary": {
+      "$value": { "colorSpace": "srgb", "components": [0.2, 0.4, 0.8] }
+    },
+    "semiTransparent": {
+      "$value": { "colorSpace": "srgb", "components": [1, 0, 0], "alpha": 0.5 }
+    },
+    "oklchBrand": {
+      "$value": { "colorSpace": "oklch", "components": [0.7, 0.15, 180] }
+    }
+  },
+  "spacing": {
+    "$type": "dimension",
+    "small": { "$value": { "value": 8, "unit": "px" } },
+    "large": { "$value": { "value": 2, "unit": "rem" } }
+  },
+  "fonts": {
+    "$type": "fontFamily",
+    "heading": { "$value": ["Georgia", "serif"] },
+    "body": { "$value": "Helvetica" }
+  },
+  "weights": {
+    "$type": "fontWeight",
+    "bold": { "$value": "bold" },
+    "custom": { "$value": 550 }
+  },
+  "durations": {
+    "$type": "duration",
+    "fast": { "$value": { "value": 100, "unit": "ms" } },
+    "slow": { "$value": { "value": 1.5, "unit": "s" } }
+  },
+  "easings": {
+    "$type": "cubicBezier",
+    "easeInOut": { "$value": [0.42, 0, 0.58, 1] }
+  },
+  "ratio": {
+    "$type": "number",
+    "$value": 1.618
+  },
+  "label": {
+    "$type": "string",
+    "$value": "Design System"
+  },
+  "enabled": {
+    "$type": "boolean",
+    "$value": false
+  },
+  "shadows": {
+    "$type": "shadow",
+    "card": {
+      "$value": {
+        "color": { "colorSpace": "srgb", "components": [0, 0, 0], "alpha": 0.25 },
+        "offsetX": { "value": 0, "unit": "px" },
+        "offsetY": { "value": 4, "unit": "px" },
+        "blur": { "value": 8, "unit": "px" },
+        "spread": { "value": 0, "unit": "px" }
+      }
+    }
+  },
+  "borders": {
+    "$type": "border",
+    "default": {
+      "$value": {
+        "color": { "colorSpace": "srgb", "components": [0.8, 0.8, 0.8] },
+        "width": { "value": 1, "unit": "px" },
+        "style": "solid"
+      }
+    }
+  },
+  "strokes": {
+    "$type": "strokeStyle",
+    "dashed": { "$value": "dashed" }
+  },
+  "gradients": {
+    "$type": "gradient",
+    "sunrise": {
+      "$value": [
+        { "color": { "colorSpace": "srgb", "components": [1, 0.5, 0] }, "position": 0 },
+        { "color": { "colorSpace": "srgb", "components": [1, 1, 0] }, "position": 1 }
+      ]
+    }
+  },
+  "typography": {
+    "$type": "typography",
+    "heading": {
+      "$value": {
+        "fontFamily": ["Georgia", "serif"],
+        "fontSize": { "value": 24, "unit": "px" },
+        "fontWeight": "bold",
+        "lineHeight": 1.2
+      }
+    }
+  },
+  "transitions": {
+    "$type": "transition",
+    "fade": {
+      "$value": {
+        "duration": { "value": 200, "unit": "ms" },
+        "timingFunction": [0.42, 0, 0.58, 1]
+      }
+    }
+  }
+}
