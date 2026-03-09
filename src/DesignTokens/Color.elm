@@ -178,6 +178,8 @@ withAlpha a color =
 
     -- { "colorSpace": "srgb", "components": [0.2, 0.4, 0.8], "alpha": 1 }
 
+
+
 Alpha defaults to 1 when absent. The `hex` field is ignored.
 
 -}
@@ -249,6 +251,7 @@ encode color =
 {-| Convert a ColorSpace to its DTCG/CSS string identifier.
 
     colorSpaceToString Oklch == "oklch"
+
     colorSpaceToString DisplayP3 == "display-p3"
 
 -}
@@ -301,6 +304,7 @@ colorSpaceToString cs =
 {-| Parse a DTCG/CSS color space string.
 
     colorSpaceFromString "oklch" == Just Oklch
+
     colorSpaceFromString "unknown" == Nothing
 
 -}

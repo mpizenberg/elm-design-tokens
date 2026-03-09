@@ -42,6 +42,8 @@ Expects a JSON array of stop objects:
 
     -- [{ "color": {...}, "position": 0 }, { "color": {...}, "position": 1 }]
 
+
+
 -}
 decoder : Decoder Gradient
 decoder =

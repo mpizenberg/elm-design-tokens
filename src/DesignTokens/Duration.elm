@@ -55,6 +55,8 @@ s value =
 
     -- { "value": 200, "unit": "ms" }
 
+
+
 -}
 decoder : Decoder Duration
 decoder =
@@ -105,6 +107,7 @@ encodeUnit unit =
 {-| Convert a duration to a CSS string.
 
     toCssString (ms 200) == "200ms"
+
     toCssString (s 0.5) == "0.5s"
 
 -}

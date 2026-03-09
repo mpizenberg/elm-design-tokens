@@ -1,11 +1,16 @@
 module DesignTokens.Fuzzers exposing
-    ( color, colorSpace, components
+    ( color
+    , colorSpace
+    , components
     , cubicBezier
-    , dimension, dimensionUnit
-    , duration, durationUnit
+    , dimension
+    , dimensionUnit
+    , duration
+    , durationUnit
     , fontFamily
     , fontWeight
-    , gradient, gradientStop
+    , gradient
+    , gradientStop
     , lineCap
     )
 
@@ -23,8 +28,20 @@ import Fuzz exposing (Fuzzer)
 colorSpace : Fuzzer ColorSpace
 colorSpace =
     Fuzz.oneOfValues
-        [ Srgb, SrgbLinear, DisplayP3, A98Rgb, ProphotoRgb, Rec2020
-        , XyzD50, XyzD65, Lab, Lch, Oklab, Oklch, Hsl, Hwb
+        [ Srgb
+        , SrgbLinear
+        , DisplayP3
+        , A98Rgb
+        , ProphotoRgb
+        , Rec2020
+        , XyzD50
+        , XyzD65
+        , Lab
+        , Lch
+        , Oklab
+        , Oklch
+        , Hsl
+        , Hwb
         ]
 
 
@@ -82,8 +99,16 @@ fontWeight =
     Fuzz.oneOf
         [ Fuzz.intRange 1 1000 |> Fuzz.map Numeric
         , Fuzz.oneOfValues
-            [ Thin, ExtraLight, Light, Normal, Medium
-            , SemiBold, Bold, ExtraBold, Black, ExtraBlack
+            [ Thin
+            , ExtraLight
+            , Light
+            , Normal
+            , Medium
+            , SemiBold
+            , Bold
+            , ExtraBold
+            , Black
+            , ExtraBlack
             ]
         ]
 
@@ -99,8 +124,16 @@ fontFamily =
 fontName : Fuzzer String
 fontName =
     Fuzz.oneOfValues
-        [ "Helvetica", "Arial", "sans-serif", "Georgia", "Times New Roman"
-        , "Courier New", "monospace", "Inter", "Roboto", "system-ui"
+        [ "Helvetica"
+        , "Arial"
+        , "sans-serif"
+        , "Georgia"
+        , "Times New Roman"
+        , "Courier New"
+        , "monospace"
+        , "Inter"
+        , "Roboto"
+        , "system-ui"
         ]
 
 

@@ -8,7 +8,9 @@ module DesignTokens.Internal.CssFormat exposing (formatFloat)
 and limiting to 6 decimal places.
 
     formatFloat 16 == "16"
+
     formatFloat 1.5 == "1.5"
+
     formatFloat 0.30000000000000004 == "0.3"
 
 -}

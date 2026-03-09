@@ -40,6 +40,7 @@ type FontWeight
 {-| Convert a font weight to its numeric value.
 
     toInt Bold == 700
+
     toInt (Numeric 450) == 450
 
 -}
@@ -209,6 +210,7 @@ encode weight =
 {-| Convert a font weight to a CSS string (always numeric).
 
     toCssString Bold == "700"
+
     toCssString (Numeric 450) == "450"
 
 -}
