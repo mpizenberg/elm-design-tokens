@@ -16,7 +16,10 @@
         "DesignTokens.StrokeStyle",
         "DesignTokens.Gradient",
         "DesignTokens.Typography",
-        "DesignTokens.Transition"
+        "DesignTokens.Transition",
+        "DesignTokens.Token",
+        "DesignTokens.TokenTree",
+        "DesignTokens.TokenTree.Resolve"
     ],
     "elm-version": "0.19.1 <= v < 0.20.0",
     "dependencies": {

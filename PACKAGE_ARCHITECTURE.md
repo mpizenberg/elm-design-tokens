@@ -60,11 +60,20 @@ The project is split into two components:
                       └────────────┬──────────────┘
                                    │
                       ┌────────────▼──────────────┐
+                      │   elm-design-tokens        │
+                      │   (published Elm package)  │
+                      │                            │
+                      │  1. Core types (Color, ...) │
+                      │  2. Parse DTCG JSON        │
+                      │  3. Resolve aliases/$type  │
+                      └────────────┬──────────────┘
+                                   │ used by
+                      ┌────────────▼──────────────┐
                       │      CLI / Codegen         │
                       │  (Node + elm-codegen)       │
                       │                            │
-                      │  1. Parse DTCG JSON        │
-                      │  2. Resolve aliases/$extends│
+                      │  1. Read .tokens.json      │
+                      │  2. Resolve $extends       │
                       │  3. Generate Elm modules   │
                       └────────────┬──────────────┘
                                    │
@@ -74,15 +83,6 @@ The project is split into two components:
                       │  - Theme type              │
                       │  - Token constants          │
                       │  - Accessor functions       │
-                      └────────────┬──────────────┘
-                                   │ imports
-                      ┌────────────▼──────────────┐
-                      │   elm-design-tokens        │
-                      │   (published Elm package)  │
-                      │                            │
-                      │  - Core types (Color, etc.)│
-                      │  - Conversion helpers       │
-                      │  - JSON decoders            │
                       └───────────────────────────┘
 ```
 
@@ -96,32 +96,58 @@ and is imported by the generated code.
 
 ```
 DesignTokens
-├── Color          -- Color type, color space support (sRGB, Display P3, OKLCh)
+│
+│── Core token types (Phase 1)
+├── Color          -- Color type, 14 CSS color spaces
 ├── Dimension      -- Dimension type (px, rem)
-├── FontFamily     -- Font family (single or stack)
-├── FontWeight     -- Font weight (numeric or named)
+├── FontFamily     -- Font family (opaque, non-empty)
+├── FontWeight     -- Font weight (numeric or named, 11 variants)
 ├── Duration       -- Duration type (ms, s)
 ├── CubicBezier    -- Cubic bézier curves for easing
-├── Typography     -- Composite: font family + size + weight + line height + ...
 ├── Shadow         -- Composite: color + offsets + blur + spread
 ├── Border         -- Composite: width + style + color
 ├── StrokeStyle    -- Stroke style (simple string or dash pattern)
 ├── Gradient       -- Gradient stops (position + color pairs)
+├── Typography     -- Composite: font family + size + weight + line height + ...
 ├── Transition     -- Composite: duration + delay + timing function
-└── Decode         -- JSON decoders for all types (DTCG format)
+│
+│── DTCG file parser (Phase 2)
+├── Token          -- TokenValue union (15 variants), ResolvedToken, TokenMeta
+├── TokenTree      -- Parse raw DTCG JSON → unresolved tree
+├── TokenTree
+│   └── Resolve    -- Type inheritance + alias resolution + cycle detection
+│
+└── Internal
+    └── CssFormat  -- Shared float formatting (not exposed)
 ```
 
-Each module exposes:
+Each core type module exposes:
 
 - **The type itself** — e.g., `Color`, `Dimension`
 - **Constructors / helpers** — e.g., `Color.srgb 0.2 0.4 0.8`, `Dimension.px 16`
-- **Conversion functions** — e.g., `Color.toCssString`, `Dimension.toCssString`
+- **JSON codecs** — `decoder` and `encode` for the DTCG value format
+- **CSS output** — `toCssString` for CSS string representation
 
-#### Design Principles for Types
+The parser modules expose:
+
+- **`Token`** — `TokenValue` union wrapping all 15 DTCG types (12 rich types +
+  number/string/boolean), with type-dispatching decoder, encoder, and CSS output
+- **`TokenTree`** — `fromJson` to parse raw DTCG JSON into an unresolved tree
+  of groups and tokens, with alias detection and name validation
+- **`TokenTree.Resolve`** — `resolve` to flatten the tree with `$type` inheritance,
+  decode literal values, resolve alias chains, and detect circular references
+
+#### Design Principles
 
 - **Types are concrete, not opaque** — record aliases and union types that users
-  can pattern match on. Design tokens are data; there's no invariant to protect.
-- **Minimal dependencies** — the core package depends only on `elm/core` and `elm/json`.
+  can pattern match on. Exception: `FontFamily` is opaque to enforce non-empty.
+- **Minimal dependencies** — the package depends only on `elm/core` and `elm/json`.
+- **Validation at decode boundary** — decoders enforce constraints (e.g., cubic
+  bézier p1x/p2x in [0,1]); users can construct values directly without validation.
+- **Error accumulation** — the parser and resolver report all errors at once,
+  not fail-fast.
+- **Deferred decoding** — literal token values are stored as raw JSON until
+  resolution, when the effective `$type` (after group inheritance) is known.
 - **Ecosystem bridges are separate** — `toCssString` covers the common case.
   Dedicated conversion packages (e.g., `elm-design-tokens-css`,
   `elm-design-tokens-ui`) can be added later if needed.
@@ -159,19 +185,20 @@ Imports and type annotations are computed automatically.
 .tokens.json
     │
     ▼
-Parse JSON (Elm JSON decoder)
+TokenTree.fromJson          ── Parse JSON into unresolved tree
+    │                           (groups, tokens, alias detection)
+    ▼
+TokenTree.Resolve.resolve   ── Inherit $type from groups
+    │                           Decode literal values
+    │                           Resolve alias chains (cycle detection)
+    ▼
+List ResolvedToken          ── Flat list of typed tokens with paths
     │
     ▼
-Build token tree (groups, tokens, aliases)
+CLI: resolve $extends       ── Deep merge group inheritance (Phase 3)
     │
     ▼
-Resolve aliases and $extends (topological sort, cycle detection)
-    │
-    ▼
-Flatten to resolved token list: List (Path, ResolvedToken)
-    │
-    ▼
-Generate Elm declarations via elm-codegen API
+Generate Elm declarations   ── elm-codegen API
     │
     ▼
 Output .elm files
@@ -319,11 +346,16 @@ Add to your build script or npm scripts:
 
 ## Roadmap
 
-1. **Phase 1 — Core types package**: Implement all DTCG token types as Elm modules
-   with constructors, `toCssString` helpers, and JSON decoders.
-2. **Phase 2 — DTCG parser + resolver**: Parse `.tokens.json` into a token tree,
-   resolve aliases, `$extends`, and group inheritance.
-3. **Phase 3 — Code generator**: elm-codegen based CLI that reads DTCG files
-   and emits typed Elm modules (constants and/or `Theme` records).
+1. **Phase 1 — Core types package** *(done)*: All 12 DTCG token types implemented
+   as Elm modules with constructors, JSON codecs, `toCssString` helpers, and tests
+   (107 tests). Plus 3 primitive types (number, string, boolean) handled directly.
+2. **Phase 2 — DTCG parser + resolver** *(done)*: Parse raw `.tokens.json` into an
+   unresolved token tree (`TokenTree.fromJson`), then resolve `$type` inheritance
+   and alias references with cycle detection (`TokenTree.Resolve.resolve`).
+   Produces `List ResolvedToken` with typed values, paths, and metadata.
+   72 additional tests (179 total). `$extends` stored but deferred to Phase 3.
+3. **Phase 3 — Code generator**: elm-codegen based CLI that reads DTCG files,
+   resolves `$extends` (group inheritance via deep merge), and emits typed Elm
+   modules (constants and/or `Theme` records).
 4. **Phase 4 — Ecosystem bridges**: Optional packages for `elm-css` and `elm-ui`
    integration.
