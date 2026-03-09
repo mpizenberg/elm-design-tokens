@@ -11,8 +11,8 @@
     "cli/worker.js"
   ],
   "scripts": {
-    "build:cli": "cd cli && elm make src/Main.elm --output=worker.js --optimize",
-    "test:cli": "cd cli && elm-test",
+    "cli:build": "cd cli && elm make src/Main.elm --output=worker.js --optimize",
+    "cli:test": "cd cli && elm-test",
     "make:docs": "elm make --docs=docs.json",
     "test": "elm-test",
     "format": "elm-format --yes src/ tests/ cli/src/ cli/tests/",
