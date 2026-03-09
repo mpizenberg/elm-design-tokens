@@ -1,0 +1,19 @@
+{
+  "name": "elm-design-tokens",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "elm-test",
+    "format": "elm-format --yes src/ tests/",
+    "format:check": "elm-format src/ tests/ --validate",
+    "postinstall": "elm-tooling install"
+  },
+  "devDependencies": {
+    "elm-test": "^0.19.1-revision17",
+    "elm-tooling": "^1.17.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=10.0.0"
+  }
+}
